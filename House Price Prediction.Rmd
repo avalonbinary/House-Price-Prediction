@@ -1,0 +1,149 @@
+---
+title: "House Price Prediction"
+author: "Avalon"
+date: "2017/1/9"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(plyr)
+library(pipeR)
+library(ggplot2)
+```
+
+## Loading data and check missing value distribution
+
+```{r loaddata, echo = FALSE, warning = FALSE}
+traindata <- fread("train.csv", stringsAsFactors = TRUE)
+testdata <- fread("test.csv", stringsAsFactors = TRUE)
+mergedata <- rbind.fill(traindata, testdata) %>>% setDT
+tmpfile <- mergedata[, -"SalePrice", with = FALSE]
+tmpfile <- ifelse(is.na(tmpfile), 1, 0)
+tmpfile2 <- expand.grid(x = 1 : nrow(tmpfile), y = colnames(tmpfile)) %>>% setDT
+tmpfile2$trans <- as.vector(tmpfile)
+tmpfile2 <- tmpfile2[y %in% tmpfile2[, all(trans == 0), y][V1 == FALSE, y]]
+ggplot(tmpfile2, aes(x, y, fill = as.factor(trans))) + geom_tile() + 
+  scale_fill_manual(values = c("white", "black"),
+                    name = "Missing Value\n0 = NO 1 = YES")
+```
+
+## Analyzing the factor MsSubClass
+Definitions : Identifies the type of dwelling involved in the sale
+
+```{r, echo = FALSE}
+mergedata <- mergedata[, MSSubClass := as.factor(MSSubClass)]
+mergedata[, .(number = .N), MSSubClass][order(-number)] %>>%
+  ggplot(aes(MSSubClass, number, fill = MSSubClass)) + geom_bar(stat = "identity") +
+  theme_bw()
+traindata[, .(mean = mean(SalePrice, na.rm = TRUE),
+              median = median(SalePrice, na.rm = TRUE)), MSSubClass][
+                ,MSSubClass := as.factor(MSSubClass)] %>>%
+  ggplot(aes(MSSubClass, mean, fill = MSSubClass)) + geom_bar(stat = "identity") +
+  theme_bw()
+
+```
+
+## Analyzing the MSZoning
+
+Definitions : Identifies the general zoning classification of the sale  
+Something weird is there is a category called A representing agriculture.
+However, it seems that A does not exist in the list of the categories.  
+RP and I categories react the same way as well. Only testdata contains NA value.
+
+```{r MSZoning, echo = FALSE, warning = FALSE}
+mergedata[, .(number = .N), MSZoning] %>>% ggplot(aes(MSZoning, number,
+                fill = MSZoning)) + geom_bar(stat = "identity") + theme_bw()
+traindata[, .(mean = mean(SalePrice)), MSZoning] %>>% ggplot(aes(MSZoning, mean,
+                fill = MSZoning)) + geom_bar(stat = "identity") + theme_bw()
+```
+
+## Analyzing The LotFrontage
+
+Definitions : Linear feet of street connected to property  
+Viewing the distribution of entire vector except missing value  
+It seems that tremendous missing values in LotFrontage vector does not relate to
+the average value of it, but the median value seems to be a little bit larger
+while the data in LogFrontage is missing. Hence, this indicates that the missing
+section contain much more higher value.
+```{r LotFrontage, echo = FALSE, warning = FALSE}
+ggplot(data = traindata, aes(LotFrontage)) + geom_density(fill = "skyblue") +
+  scale_x_continuous(breaks = seq(0, 300, by = 50)) + theme_bw()
+traindata[, .(mean = mean(SalePrice), median = median(SalePrice)),
+          .(NAornot = is.na(LotFrontage))]
+```
+
+## Analyzing LotArea
+Definitions : Lot size in square feet  
+There are 14 outliers whose value are greater than 50000 feat squares, I set
+the limitation of the plot on 50000. The maximum value is 200000.  
+In general, we would assume that the size of lot is highly correlate with the
+sale price. Nonetheless, the stength correlation does not support this 
+hypothesis.After all, the relationship between size of Lot and sale price is positive.
+
+```{r LotArea, echo = FALSE, warning = FALSE}
+ggplot(data = mergedata, aes(LotArea)) + geom_density(fill = "brown") + 
+  scale_x_continuous(limits = c(0, 50000)) + theme_bw()
+cor(traindata$LotArea, traindata$SalePrice)
+```
+
+## Analyzing Street
+Definitions : Type of road access to property  
+This factor is an awkward factor. It contains only 12 Grvl while other is pave.
+All in all, the street within Grvl might be much rougher or somewhat. The 
+sale price in Grvl is much more cheaper than the one in pave. Hence, this factor
+could be a strong preditor.
+```{r Street, echo = FALSE}
+mergedata[, .(number = .N), Street]
+traindata[, .(mean = mean(SalePrice), median = median(SalePrice)), Street]
+```
+
+## Analyzing Alley
+Definitions : Type of alley access to property  
+I don't know if it is a coincidence that the house with a neiborhood with Grvl
+has reletively low mean sale price. This matchs the circumstance that the house
+in Grvl has relatively low sale price as well. However, the houses with no 
+neiborhood are majority and it shows no giant difference with the houses with 
+pave
+```{r, echo = FALSE}
+mergedata[, .(number = .N), Alley]
+traindata[, .(mean = mean(SalePrice), median = median(SalePrice)), Alley]
+```
+
+## Analyzing LotShape
+Definitions : General shape of property
+Firstly, I think the LotShape doesn't matter, but it seems like that the most 
+expensive objects are always with IR1 shape lot.  
+Even though mean and median in Reg shape lot are relatively low, there are still
+tremendous outliers.
+```{r, echo = FALSE}
+ggplot(data = traindata, aes(LotShape, SalePrice)) + geom_boxplot()
+```
+
+## Analyzing LandContour
+Definitions : Flatness of the property   
+Conspicuously, the houses with Bnk has very stable low sale price. Inspite of
+the fact that mean and median in LVl are relatively low, there are numerous 
+outliers in LVl.
+```{r, echo = FALSE}
+mergedata[, .(number = .N), LandContour]
+ggplot(data = traindata, aes(LandContour, SalePrice)) + geom_boxplot()
+```
+
+## Analyzing Utilities
+Definitions : Type of utilities available  
+After see the distribution of the feature. Set a hot coded feature might be a
+good way to explain it. Ther is only one house without water supply. Also, there
+are two NA value.
+```{r, echo = FALSE}
+mergedata[, .(Number = .N), Utilities]
+traindata[, .(Number = .N), Utilities]
+```
+
+## Analyzing LotConfig
+Definitions : Lot configuration
+```{r, echo = FALSE}
+ggplot(traindata, aes(as.factor(LotConfig), SalePrice)) + geom_boxplot() +
+  labs(x = "LotConfig")
+```
+
